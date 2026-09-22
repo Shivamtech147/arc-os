@@ -228,6 +228,8 @@ export interface BackupData {
   schemaVersion: number;
   appVersion: string;
   exportDate: string;
+  backupId?: string;
+  recordCounts?: Record<string, number>;
   userAccount?: {
     uid: string;
     email: string | null;

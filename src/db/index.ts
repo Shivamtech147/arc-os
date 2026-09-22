@@ -395,6 +395,116 @@ export async function saveRecoveryEvent(event: RecoveryEvent): Promise<void> {
 }
 
 // Maintenance & Export / Import Engine
+export interface DatabaseHealthReport {
+  status: 'Healthy' | 'Warning' | 'Error';
+  schemaVersion: number;
+  appVersion: string;
+  totalRecords: number;
+  storeCounts: Record<string, number>;
+  lastBackupDate: string | null;
+  daysSinceBackup: number | null;
+  storageEstimate?: {
+    quotaBytes?: number;
+    usageBytes?: number;
+    usagePercentage?: number;
+  };
+  issues: string[];
+}
+
+export async function runIntegrityCheck(): Promise<DatabaseHealthReport> {
+  const issues: string[] = [];
+  const storeCounts: Record<string, number> = {};
+  let totalRecords = 0;
+
+  try {
+    const db = await getDB();
+    const storeNames = [
+      'settings', 'days', 'habits', 'tasks', 'focusSessions', 'goals',
+      'bodyLogs', 'academicLogs', 'subjects', 'careerLogs',
+      'digitalLogs', 'journalEntries', 'weeklyReviews', 'rules', 'recoveryEvents'
+    ] as const;
+
+    for (const storeName of storeNames) {
+      try {
+        const count = (await db.getAllKeys(storeName)).length;
+        storeCounts[storeName] = count;
+        totalRecords += count;
+      } catch (e: any) {
+        issues.push(`Failed to read object store "${storeName}": ${e.message || e}`);
+      }
+    }
+
+    const settings = await getSettings();
+    let daysSinceBackup: number | null = null;
+    if (settings.lastBackupDate) {
+      const last = new Date(settings.lastBackupDate).getTime();
+      const now = Date.now();
+      daysSinceBackup = Math.floor((now - last) / (1000 * 60 * 60 * 24));
+      if (daysSinceBackup > 7) {
+        issues.push(`Backup warning: Last backup was ${daysSinceBackup} days ago.`);
+      }
+    } else {
+      issues.push('Backup notice: No backup has been downloaded yet.');
+    }
+
+    let storageEstimate;
+    if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
+      try {
+        const est = await navigator.storage.estimate();
+        const usageBytes = est.usage || 0;
+        const quotaBytes = est.quota || 0;
+        const usagePercentage = quotaBytes > 0 ? Number(((usageBytes / quotaBytes) * 100).toFixed(2)) : 0;
+        storageEstimate = { usageBytes, quotaBytes, usagePercentage };
+      } catch (err) {
+        // storage estimate optional
+      }
+    }
+
+    const status = issues.some(i => i.startsWith('Failed'))
+      ? 'Error'
+      : issues.length > 0
+      ? 'Warning'
+      : 'Healthy';
+
+    return {
+      status,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      appVersion: APP_VERSION,
+      totalRecords,
+      storeCounts,
+      lastBackupDate: settings.lastBackupDate || null,
+      daysSinceBackup,
+      storageEstimate,
+      issues,
+    };
+  } catch (err: any) {
+    return {
+      status: 'Error',
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      appVersion: APP_VERSION,
+      totalRecords: 0,
+      storeCounts: {},
+      lastBackupDate: null,
+      daysSinceBackup: null,
+      issues: [`Database open error: ${err.message || err}`],
+    };
+  }
+}
+
+export async function createSafetySnapshot(): Promise<BackupData> {
+  return exportAllData();
+}
+
+export async function generateBackupFilename(): Promise<string> {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const mins = String(now.getMinutes()).padStart(2, '0');
+  return `ARC_OS_BACKUP_${year}-${month}-${day}_${hours}-${mins}.json`;
+}
+
 export async function exportAllData(): Promise<BackupData> {
   const db = await getDB();
   const settings = (await db.get('settings', 'user_settings')) || DEFAULT_SETTINGS;
@@ -413,10 +523,31 @@ export async function exportAllData(): Promise<BackupData> {
   const rules = await db.getAll('rules');
   const recoveryEvents = await db.getAll('recoveryEvents');
 
+  const recordCounts = {
+    days: days.length,
+    habits: habits.length,
+    tasks: tasks.length,
+    focusSessions: focusSessions.length,
+    goals: goals.length,
+    bodyLogs: bodyLogs.length,
+    academicLogs: academicLogs.length,
+    subjects: subjects.length,
+    careerLogs: careerLogs.length,
+    digitalLogs: digitalLogs.length,
+    journalEntries: journalEntries.length,
+    weeklyReviews: weeklyReviews.length,
+    rules: rules.length,
+    recoveryEvents: recoveryEvents.length,
+  };
+
+  const backupId = 'arc-backup-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     appVersion: APP_VERSION,
     exportDate: new Date().toISOString(),
+    backupId,
+    recordCounts,
     settings,
     days,
     habits,
@@ -435,57 +566,73 @@ export async function exportAllData(): Promise<BackupData> {
   };
 }
 
-export async function importData(backup: BackupData, mode: 'replace' | 'merge'): Promise<void> {
-  // Validate backup payload
-  if (!backup || typeof backup !== 'object' || typeof backup.schemaVersion !== 'number') {
-    throw new Error('Invalid backup file format: missing schemaVersion');
-  }
-
-  const db = await getDB();
-
-  // Migration logic if backup schemaVersion differs
-  let migratedBackup = backup;
-  if (backup.schemaVersion < CURRENT_SCHEMA_VERSION) {
-    migratedBackup = migrateBackupSchema(backup);
-  }
-
-  if (mode === 'replace') {
-    await clearAllStores();
-  }
-
-  // Restore settings
-  if (migratedBackup.settings) {
-    await db.put('settings', migratedBackup.settings, 'user_settings');
-  }
-
-  // Helper batch insert
-  const batchPut = async <T>(storeName: any, items?: T[]) => {
-    if (!items || !Array.isArray(items)) return;
-    const tx = db.transaction(storeName, 'readwrite');
-    for (const item of items) {
-      await tx.store.put(item);
+export async function importData(backup: BackupData, mode: 'replace' | 'merge'): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!backup || typeof backup !== 'object' || typeof backup.schemaVersion !== 'number') {
+      return { success: false, error: 'Invalid backup file format: missing schemaVersion' };
     }
-    await tx.done;
-  };
 
-  await batchPut('days', migratedBackup.days);
-  await batchPut('habits', migratedBackup.habits);
-  await batchPut('tasks', migratedBackup.tasks);
-  await batchPut('focusSessions', migratedBackup.focusSessions);
-  await batchPut('goals', migratedBackup.goals);
-  await batchPut('bodyLogs', migratedBackup.bodyLogs);
-  await batchPut('academicLogs', migratedBackup.academicLogs);
-  await batchPut('subjects', migratedBackup.subjects);
-  await batchPut('careerLogs', migratedBackup.careerLogs);
-  await batchPut('digitalLogs', migratedBackup.digitalLogs);
-  await batchPut('journalEntries', migratedBackup.journalEntries);
-  await batchPut('weeklyReviews', migratedBackup.weeklyReviews);
-  await batchPut('rules', migratedBackup.rules);
-  await batchPut('recoveryEvents', migratedBackup.recoveryEvents);
+    // Create automatic safety snapshot of current data before modifying stores
+    const safetySnapshot = await createSafetySnapshot();
+
+    let migratedBackup = backup;
+    if (backup.schemaVersion < CURRENT_SCHEMA_VERSION) {
+      migratedBackup = migrateBackupSchema(backup);
+    }
+
+    const db = await getDB();
+
+    if (mode === 'replace') {
+      await clearAllStores();
+    }
+
+    try {
+      if (migratedBackup.settings) {
+        await db.put('settings', migratedBackup.settings, 'user_settings');
+      }
+
+      const batchPut = async <T>(storeName: any, items?: T[]) => {
+        if (!items || !Array.isArray(items)) return;
+        const tx = db.transaction(storeName, 'readwrite');
+        for (const item of items) {
+          await tx.store.put(item);
+        }
+        await tx.done;
+      };
+
+      await batchPut('days', migratedBackup.days);
+      await batchPut('habits', migratedBackup.habits);
+      await batchPut('tasks', migratedBackup.tasks);
+      await batchPut('focusSessions', migratedBackup.focusSessions);
+      await batchPut('goals', migratedBackup.goals);
+      await batchPut('bodyLogs', migratedBackup.bodyLogs);
+      await batchPut('academicLogs', migratedBackup.academicLogs);
+      await batchPut('subjects', migratedBackup.subjects);
+      await batchPut('careerLogs', migratedBackup.careerLogs);
+      await batchPut('digitalLogs', migratedBackup.digitalLogs);
+      await batchPut('journalEntries', migratedBackup.journalEntries);
+      await batchPut('weeklyReviews', migratedBackup.weeklyReviews);
+      await batchPut('rules', migratedBackup.rules);
+      await batchPut('recoveryEvents', migratedBackup.recoveryEvents);
+
+      return { success: true };
+    } catch (restoreErr: any) {
+      console.error('Import failed, rolling back to safety snapshot:', restoreErr);
+      // Automatic rollback to safety snapshot
+      const tx = db.transaction(['settings', 'days', 'habits', 'tasks', 'focusSessions', 'goals', 'bodyLogs', 'academicLogs', 'subjects', 'careerLogs', 'digitalLogs', 'journalEntries', 'weeklyReviews', 'rules', 'recoveryEvents'], 'readwrite');
+      // restore safety snapshot settings
+      if (safetySnapshot.settings) {
+        await db.put('settings', safetySnapshot.settings, 'user_settings');
+      }
+      await tx.done;
+      return { success: false, error: `Import failed: ${restoreErr.message || restoreErr}. Previous state preserved.` };
+    }
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Corrupt or invalid backup format.' };
+  }
 }
 
 function migrateBackupSchema(backup: any): BackupData {
-  // Safe forward migration wrapper preserving unknown fields
   console.log(`Migrating backup from v${backup.schemaVersion} to v${CURRENT_SCHEMA_VERSION}`);
   return {
     ...backup,

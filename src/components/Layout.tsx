@@ -56,7 +56,7 @@ export const Layout: React.FC<LayoutProps> = ({
   onOpenAuth,
   children
 }) => {
-  const { dayNumber, settings, currentDateStr, currentStreak, user } = useApp();
+  const { dayNumber, settings, currentDateStr, currentStreak, user, needsBackupReminder, postExportVerifiedDownload, dismissBackupReminder } = useApp();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const primaryNavItems: {
@@ -286,6 +286,34 @@ export const Layout: React.FC<LayoutProps> = ({
             </button>
           </div>
         </header>
+
+        {/* Weekly Backup Reminder Banner */}
+        {needsBackupReminder && (
+          <div className="bg-amber-950/80 border-b border-amber-800/60 px-4 py-2.5 text-xs text-amber-200 flex flex-wrap items-center justify-between font-mono gap-3 z-20">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                Your last ARC OS backup was older than 7 days. Download a fresh local backup.
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={async () => {
+                  await postExportVerifiedDownload();
+                }}
+                className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-lg transition"
+              >
+                Download Backup
+              </button>
+              <button
+                onClick={dismissBackupReminder}
+                className="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 text-amber-300 border border-amber-800/50 rounded-lg transition"
+              >
+                Remind Me Later
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Mobile Drawer Menu */}
         {mobileMenuOpen && (

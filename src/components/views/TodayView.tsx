@@ -14,6 +14,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { NavTab } from '../Layout';
+import { DailyPerformanceTimeline } from '../DailyPerformanceTimeline';
 
 interface TodayViewProps {
   onSelectTab?: (tab: NavTab) => void;
@@ -385,7 +386,10 @@ export const TodayView: React.FC<TodayViewProps> = ({ onSelectTab }) => {
         )}
       </div>
 
-      {/* 4. Evening Reflection */}
+      {/* 4. Daily Performance & Chronological Timeline */}
+      <DailyPerformanceTimeline />
+
+      {/* 5. Evening Reflection */}
       <div className="bg-[#191C24] border border-[#2B3040] rounded-2xl p-6 space-y-4">
         <div className="flex items-center justify-between border-b border-[#2B3040] pb-3">
           <h3 className="text-sm font-bold text-white tracking-tight">Evening Reflection</h3>

@@ -11,6 +11,15 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({ onOpen
   const [showPanel, setShowPanel] = useState(false);
 
   const renderBadge = () => {
+    if (!user) {
+      return (
+        <span className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-sky-400 bg-sky-950/60 border border-sky-800/60 px-2.5 py-1 rounded-full shadow-sm">
+          <CloudOff className="w-3.5 h-3.5 text-sky-400" />
+          <span>LOCAL MODE</span>
+        </span>
+      );
+    }
+
     switch (syncStatus) {
       case 'synced':
         return (

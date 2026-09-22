@@ -279,31 +279,81 @@ export const RocketView: React.FC<RocketViewProps> = ({ onSelectTab }) => {
         </div>
       </div>
 
-      {/* 3. CONCRETE EVIDENCE CARDS */}
+      {/* 3. 90-DAY CUMULATIVE EVIDENCE METRICS */}
       <div className="bg-[#191C24] border border-[#2B3040] rounded-2xl p-6 space-y-4">
-        <h2 className="text-sm font-extrabold text-white uppercase tracking-wider font-mono border-b border-[#2B3040] pb-3">
-          YOU HAVE BUILT (CONCRETE EVIDENCE)
-        </h2>
+        <div className="flex items-center justify-between border-b border-[#2B3040] pb-3">
+          <h2 className="text-sm font-extrabold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+            <Award className="w-4 h-4 text-[#F59E0B]" />
+            90-DAY CUMULATIVE EVIDENCE
+          </h2>
+          <span className="text-xs font-mono text-[#A7AFBF]">
+            Day {daysElapsed} of {totalDays}
+          </span>
+        </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center font-mono">
-          <div className="p-4 bg-[#111318] border border-[#4F7CFF]/30 rounded-2xl">
-            <span className="text-3xl font-black text-[#4F7CFF] block">{totalFocusHours}</span>
-            <span className="text-xs text-[#A7AFBF] mt-1 block">hours focused</span>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-mono text-xs">
+          <div className="p-3 bg-[#111318] border border-[#2B3040] rounded-xl">
+            <span className="text-[10px] text-[#A7AFBF] block">DAYS LOGGED</span>
+            <span className="text-lg font-bold text-white block mt-0.5">
+              {allDayLogs.length > 0 ? `${allDayLogs.length} / 90` : 'Not tracked yet'}
+            </span>
           </div>
 
-          <div className="p-4 bg-[#111318] border border-[#22C55E]/30 rounded-2xl">
-            <span className="text-3xl font-black text-[#22C55E] block">{totalWorkoutsCount}</span>
-            <span className="text-xs text-[#A7AFBF] mt-1 block">workouts</span>
+          <div className="p-3 bg-[#111318] border border-[#2B3040] rounded-xl">
+            <span className="text-[10px] text-[#A7AFBF] block">AVG DAILY SCORE</span>
+            <span className="text-lg font-bold text-[#22C55E] block mt-0.5">
+              {allDayLogs.length > 0
+                ? `${(allDayLogs.reduce((a, c) => a + (c.score || 0), 0) / allDayLogs.length).toFixed(1)} / 6`
+                : 'Not tracked yet'}
+            </span>
           </div>
 
-          <div className="p-4 bg-[#111318] border border-[#F97316]/30 rounded-2xl">
-            <span className="text-3xl font-black text-[#F97316] block">{totalDsaCount}</span>
-            <span className="text-xs text-[#A7AFBF] mt-1 block">DSA problems</span>
+          <div className="p-3 bg-[#111318] border border-[#2B3040] rounded-xl">
+            <span className="text-[10px] text-[#A7AFBF] block">TOTAL DEEP WORK</span>
+            <span className="text-lg font-bold text-[#8B5CF6] block mt-0.5">
+              {academicLogs.length > 0
+                ? `${academicLogs.reduce((a, c) => a + (c.deepWorkHours || 0), 0)}h`
+                : 'Not tracked yet'}
+            </span>
           </div>
 
-          <div className="p-4 bg-[#111318] border border-[#8B5CF6]/30 rounded-2xl">
-            <span className="text-3xl font-black text-[#8B5CF6] block">{totalReviewsCount}</span>
-            <span className="text-xs text-[#A7AFBF] mt-1 block">weekly reviews</span>
+          <div className="p-3 bg-[#111318] border border-[#2B3040] rounded-xl">
+            <span className="text-[10px] text-[#A7AFBF] block">FOCUS SESSIONS</span>
+            <span className="text-lg font-bold text-[#4F7CFF] block mt-0.5">
+              {focusSessions.length > 0 ? `${focusSessions.length} sessions` : 'Not tracked yet'}
+            </span>
+          </div>
+
+          <div className="p-3 bg-[#111318] border border-[#2B3040] rounded-xl">
+            <span className="text-[10px] text-[#A7AFBF] block">TOTAL WORKOUTS</span>
+            <span className="text-lg font-bold text-[#22C55E] block mt-0.5">
+              {bodyLogs.length > 0 ? `${totalWorkoutsCount} workouts` : 'Not tracked yet'}
+            </span>
+          </div>
+
+          <div className="p-3 bg-[#111318] border border-[#2B3040] rounded-xl">
+            <span className="text-[10px] text-[#A7AFBF] block">ACADEMIC HOURS</span>
+            <span className="text-lg font-bold text-[#4F7CFF] block mt-0.5">
+              {academicLogs.length > 0
+                ? `${academicLogs.reduce((a, c) => a + (c.studyHours || 0), 0)}h`
+                : 'Not tracked yet'}
+            </span>
+          </div>
+
+          <div className="p-3 bg-[#111318] border border-[#2B3040] rounded-xl">
+            <span className="text-[10px] text-[#A7AFBF] block">CAREER HOURS</span>
+            <span className="text-lg font-bold text-[#F97316] block mt-0.5">
+              {careerLogs.length > 0
+                ? `${careerLogs.reduce((a, c) => a + (c.codingHours || 0), 0)}h`
+                : 'Not tracked yet'}
+            </span>
+          </div>
+
+          <div className="p-3 bg-[#111318] border border-[#2B3040] rounded-xl">
+            <span className="text-[10px] text-[#A7AFBF] block">STREAK (CURRENT / BEST)</span>
+            <span className="text-lg font-bold text-[#EC4899] block mt-0.5">
+              {currentStreak}d streak
+            </span>
           </div>
         </div>
       </div>

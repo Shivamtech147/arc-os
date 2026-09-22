@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { NavTab } from '../Layout';
+import { DailyPerformanceTimeline } from '../DailyPerformanceTimeline';
 import {
   Zap,
   CheckCircle2,
@@ -296,7 +297,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* 4. Primary Actions Buttons */}
+      {/* 4. Chronological Performance Timeline & Summary */}
+      <DailyPerformanceTimeline />
+
+      {/* 5. Primary Actions Buttons */}
       <div className="flex flex-col sm:flex-row gap-3 pt-2">
         <button
           onClick={() => onSelectTab('lockin')}

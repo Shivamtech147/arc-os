@@ -17,9 +17,11 @@ export const SettingsView: React.FC = () => {
   const {
     settings,
     updateSettings,
-    exportBackup,
+    postExportVerifiedDownload,
     importBackup,
-    needsBackupReminder
+    needsBackupReminder,
+    runIntegrityCheck,
+    isLocalMode
   } = useApp();
 
   const [userName, setUserName] = useState(settings.userName || '');
@@ -31,13 +33,14 @@ export const SettingsView: React.FC = () => {
   const [gymTarget, setGymTarget] = useState(settings.gymTargetSessions || 5);
 
   const [recordCounts, setRecordCounts] = useState<any>(null);
+  const [healthReport, setHealthReport] = useState<db.DatabaseHealthReport | null>(null);
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('merge');
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
-  const [integrityStatus, setIntegrityStatus] = useState<string | null>(null);
 
   useEffect(() => {
     db.getDatabaseRecordCounts().then(setRecordCounts);
+    runIntegrityCheck().then(setHealthReport);
   }, []);
 
   const handleSaveGeneralSettings = async (e: React.FormEvent) => {
@@ -54,37 +57,14 @@ export const SettingsView: React.FC = () => {
   };
 
   const handleExportBackup = async () => {
-    try {
-      setExportStatus(null);
-      const jsonStr = await exportBackup();
-      
-      // Validate JSON serialization
-      const parsed = JSON.parse(jsonStr);
-      if (!parsed || typeof parsed !== 'object' || !parsed.schemaVersion) {
-        throw new Error('Serialization check failed');
-      }
-
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-
-      const now = new Date();
-      const datePart = now.toISOString().split('T')[0];
-      const hours = String(now.getHours()).padStart(2, '0');
-      const mins = String(now.getMinutes()).padStart(2, '0');
-      const fileName = `ARC_OS_BACKUP_${datePart}_${hours}-${mins}.json`;
-
-      link.setAttribute('download', fileName);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 200);
-
-      setExportStatus('Backup saved.');
+    setExportStatus(null);
+    const res = await postExportVerifiedDownload();
+    if (res.success) {
+      setExportStatus(`Verified backup saved as ${res.filename}`);
       db.getDatabaseRecordCounts().then(setRecordCounts);
-    } catch (err: any) {
-      setExportStatus("Backup couldn't be created. Your current data has not been changed.");
+      runIntegrityCheck().then(setHealthReport);
+    } else {
+      setExportStatus(`Backup export error: ${res.error}`);
     }
   };
 
@@ -98,23 +78,21 @@ export const SettingsView: React.FC = () => {
       if (!content) return;
       const res = await importBackup(content, importMode);
       if (res.success) {
-        setImportStatus('Backup restored successfully.');
+        setImportStatus('Backup restored cleanly after safety snapshot verification.');
         db.getDatabaseRecordCounts().then(setRecordCounts);
+        runIntegrityCheck().then(setHealthReport);
       } else {
-        setImportStatus(res.error || 'Backup is invalid. Your current data is unchanged.');
+        setImportStatus(res.error || 'Backup invalid. Current state preserved.');
       }
     };
     reader.readAsText(file);
   };
 
   const handleIntegrityCheck = async () => {
-    try {
-      const counts = await db.getDatabaseRecordCounts();
-      setRecordCounts(counts);
-      setIntegrityStatus('Integrity Check Passed: IndexedDB stores are valid and synchronized.');
-    } catch (err: any) {
-      setIntegrityStatus(`Integrity Check Failed: ${err.message}`);
-    }
+    const report = await runIntegrityCheck();
+    setHealthReport(report);
+    const counts = await db.getDatabaseRecordCounts();
+    setRecordCounts(counts);
   };
 
   return (
@@ -211,28 +189,47 @@ export const SettingsView: React.FC = () => {
       <div className="bg-[#121215] border border-zinc-800 rounded-2xl p-6 space-y-6">
         <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
           <h3 className="font-mono font-bold text-xs text-zinc-400 uppercase flex items-center gap-2">
-            <Database className="w-4 h-4 text-zinc-300" /> Data Safety & Maintenance Center
+            <Database className="w-4 h-4 text-zinc-300" /> Data Safety & Database Health
           </h3>
-          {needsBackupReminder && (
-            <span className="px-2.5 py-1 bg-amber-950/80 text-amber-400 border border-amber-700/60 rounded-full text-xs font-mono">
-              ⚠️ Backup Due (&gt; 7 days)
+          <div className="flex items-center gap-2 font-mono text-xs">
+            {healthReport?.status === 'Healthy' && (
+              <span className="px-2.5 py-1 bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 rounded-full font-bold flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Healthy
+              </span>
+            )}
+            {healthReport?.status === 'Warning' && (
+              <span className="px-2.5 py-1 bg-amber-950/80 text-amber-400 border border-amber-800/60 rounded-full font-bold flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5" /> Warning
+              </span>
+            )}
+            {healthReport?.status === 'Error' && (
+              <span className="px-2.5 py-1 bg-red-950/80 text-red-400 border border-red-800/60 rounded-full font-bold flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" /> Error
+              </span>
+            )}
+            <span className="px-2 py-1 bg-sky-950/60 text-sky-400 border border-sky-800/60 rounded-full text-[11px]">
+              LOCAL MODE
             </span>
-          )}
+          </div>
         </div>
 
         {/* Database Stats Info */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs">
           <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-xl">
-            <span className="text-zinc-500 text-[10px] block">SCHEMA VERSION</span>
-            <span className="text-white font-bold text-sm">v{db.CURRENT_SCHEMA_VERSION}</span>
+            <span className="text-zinc-500 text-[10px] block">SCHEMA / APP VERSION</span>
+            <span className="text-white font-bold text-sm">v{db.CURRENT_SCHEMA_VERSION} ({db.APP_VERSION})</span>
           </div>
           <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-xl">
-            <span className="text-zinc-500 text-[10px] block">TOTAL DAYS LOGGED</span>
-            <span className="text-zinc-200 font-bold text-sm">{recordCounts?.daysCount || 0}</span>
+            <span className="text-zinc-500 text-[10px] block">TOTAL RECORDS LOGGED</span>
+            <span className="text-zinc-200 font-bold text-sm">{healthReport?.totalRecords || 0}</span>
           </div>
           <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-xl">
-            <span className="text-zinc-500 text-[10px] block">FOCUS SESSIONS</span>
-            <span className="text-zinc-200 font-bold text-sm">{recordCounts?.focusSessionsCount || 0}</span>
+            <span className="text-zinc-500 text-[10px] block">STORAGE ESTIMATE</span>
+            <span className="text-zinc-200 font-bold text-sm">
+              {healthReport?.storageEstimate?.usageBytes
+                ? `${(healthReport.storageEstimate.usageBytes / 1024 / 1024).toFixed(2)} MB`
+                : 'Local IndexedDB'}
+            </span>
           </div>
           <div className="p-3 bg-zinc-900 border border-zinc-800 rounded-xl">
             <span className="text-zinc-500 text-[10px] block">LAST BACKUP</span>
@@ -319,8 +316,10 @@ export const SettingsView: React.FC = () => {
           >
             <RefreshCw className="w-3.5 h-3.5" /> Run Integrity Check
           </button>
-          {integrityStatus && (
-            <span className="text-xs font-mono text-emerald-400">{integrityStatus}</span>
+          {healthReport && (
+            <span className="text-xs font-mono text-emerald-400">
+              Integrity Check Status: {healthReport.status} ({healthReport.totalRecords} records verified)
+            </span>
           )}
         </div>
       </div>

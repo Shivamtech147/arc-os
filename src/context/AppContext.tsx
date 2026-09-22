@@ -53,6 +53,7 @@ interface AppContextType {
   recoveryEvents: RecoveryEvent[];
   allDayLogs: DayLog[];
 
+  isLocalMode: boolean;
   currentDateStr: string; // YYYY-MM-DD
   dayNumber: number; // 1 to 90
   todayScore: number; // 0 to 6
@@ -97,7 +98,10 @@ interface AppContextType {
   triggerRecovery: (reason: string, protocolApplied: string, notes?: string) => Promise<void>;
 
   exportBackup: () => Promise<string>;
+  postExportVerifiedDownload: () => Promise<{ success: boolean; filename?: string; error?: string }>;
   importBackup: (jsonContent: string, mode: 'replace' | 'merge') => Promise<{ success: boolean; error?: string }>;
+  dismissBackupReminder: () => void;
+  runIntegrityCheck: () => Promise<db.DatabaseHealthReport>;
   resetAllAppData: () => Promise<void>;
   refreshData: () => Promise<void>;
 }
@@ -307,13 +311,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const currentStreak = calculateStreak(allDayLogs);
 
+  const [backupSnoozed, setBackupSnoozed] = useState(false);
+  const dismissBackupReminder = () => {
+    setBackupSnoozed(true);
+  };
+
   const needsBackupReminder = React.useMemo(() => {
+    if (backupSnoozed) return false;
     if (!settings.lastBackupDate) return true;
     const last = new Date(settings.lastBackupDate).getTime();
     const now = new Date().getTime();
     const daysDiff = (now - last) / (1000 * 60 * 60 * 24);
     return daysDiff >= 7;
-  }, [settings.lastBackupDate]);
+  }, [settings.lastBackupDate, backupSnoozed]);
 
   // Actions wrapped with syncEngine
   const updateSettings = async (newSettings: Partial<UserSettings>) => {
@@ -549,15 +559,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return JSON.stringify(backupPayload, null, 2);
   };
 
+  const postExportVerifiedDownload = async (): Promise<{ success: boolean; filename?: string; error?: string }> => {
+    try {
+      const data = await db.exportAllData();
+      const backupPayload: BackupData = {
+        ...data,
+        userAccount: user ? { uid: user.uid, email: user.email } : undefined,
+      };
+      const jsonContent = JSON.stringify(backupPayload, null, 2);
+
+      // Post-export verification
+      const verifyParsed = JSON.parse(jsonContent) as BackupData;
+      if (!verifyParsed || typeof verifyParsed.schemaVersion !== 'number') {
+        throw new Error('Post-export verification failed: corrupt JSON structure.');
+      }
+      const requiredStores = ['days', 'habits', 'tasks', 'focusSessions', 'goals', 'bodyLogs', 'academicLogs', 'subjects', 'careerLogs', 'digitalLogs', 'journalEntries', 'weeklyReviews', 'rules', 'recoveryEvents'];
+      for (const store of requiredStores) {
+        if (!Array.isArray((verifyParsed as any)[store])) {
+          throw new Error(`Post-export verification failed: missing store array "${store}".`);
+        }
+      }
+
+      const filename = await db.generateBackupFilename();
+      const blob = new Blob([jsonContent], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      const nowIso = new Date().toISOString();
+      await updateSettings({ lastBackupDate: nowIso });
+
+      return { success: true, filename };
+    } catch (err: any) {
+      console.error('Verified backup export failed:', err);
+      return { success: false, error: err.message || 'Backup export failed.' };
+    }
+  };
+
   const importBackup = async (jsonContent: string, mode: 'replace' | 'merge'): Promise<{ success: boolean; error?: string }> => {
     try {
       const parsed = JSON.parse(jsonContent) as BackupData;
-      await db.importData(parsed, mode);
-      await loadData();
-      return { success: true };
+      const res = await db.importData(parsed, mode);
+      if (res.success) {
+        await loadData();
+      }
+      return res;
     } catch (err: any) {
       return { success: false, error: err.message || 'Corrupt or invalid backup format.' };
     }
+  };
+
+  const runIntegrityCheck = async (): Promise<db.DatabaseHealthReport> => {
+    return db.runIntegrityCheck();
   };
 
   const resetAllAppData = async () => {
@@ -572,6 +630,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       value={{
         loading,
         user,
+        isLocalMode: !user,
         syncStatus,
         pendingQueueCount,
         settings,
@@ -626,7 +685,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteRule,
         triggerRecovery,
         exportBackup,
+        postExportVerifiedDownload,
         importBackup,
+        dismissBackupReminder,
+        runIntegrityCheck,
         resetAllAppData,
         refreshData: loadData,
       }}
