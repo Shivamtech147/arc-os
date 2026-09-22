@@ -8,19 +8,31 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/shubhpratpsingh/Desktop/Winter Arc/scripts/start-arcos.sh</string>
+        <string>/Users/shubhpratpsingh/.arcos/start-arcos.sh</string>
     </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/shubhpratpsingh/arc-os</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
 
     <key>RunAtLoad</key>
     <true/>
 
     <key>KeepAlive</key>
-    <false/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/shubhpratpsingh/Desktop/Winter Arc/scratch/launchagent.log</string>
+    <string>/Users/shubhpratpsingh/.arcos/launchagent.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/shubhpratpsingh/Desktop/Winter Arc/scratch/launchagent_err.log</string>
+    <string>/Users/shubhpratpsingh/.arcos/launchagent_err.log</string>
 </dict>
 </plist>
