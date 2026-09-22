@@ -1,25 +1,21 @@
 #!/bin/bash
 
-# ARC OS Background Startup Launcher Script
-# Ensures http://127.0.0.1:5173 is active without starting duplicate processes
-
-PROJECT_DIR="/Users/shubhpratpsingh/Desktop/Winter Arc"
+# ARC OS Local-First Background Launcher
+PROJECT_DIR="/Users/shubhpratpsingh/arc-os"
+LOG_FILE="/Users/shubhpratpsingh/.arcos/arcos_server.log"
 URL="http://127.0.0.1:5173"
 
-echo "[ARC OS] Checking if local server is running on $URL..."
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
+mkdir -p "/Users/shubhpratpsingh/.arcos"
+mkdir -p "$PROJECT_DIR/scratch"
+
+# If server is already active and responding, exit 0 cleanly
 if curl -s -m 2 "$URL" > /dev/null 2>&1; then
-  echo "[ARC OS] Local server is already running on $URL."
+  echo "[ARC OS] Server is already running on $URL." >> "$LOG_FILE"
   exit 0
-else
-  echo "[ARC OS] Server not responding. Starting background Vite server..."
-  cd "$PROJECT_DIR" || exit 1
-  mkdir -p "$PROJECT_DIR/scratch"
-  nohup /opt/homebrew/bin/npm run arc > "$PROJECT_DIR/scratch/arcos_server.log" 2>&1 &
-  disown $! 2>/dev/null
-  echo "[ARC OS] Vite server process launched in background."
-  sleep 2
-  if curl -s -m 2 "$URL" > /dev/null 2>&1; then
-    echo "[ARC OS] Success: $URL is now online!"
-  fi
 fi
+
+echo "[ARC OS] Starting background Vite server on $URL..." >> "$LOG_FILE"
+cd "$PROJECT_DIR" || exit 1
+exec /opt/homebrew/bin/npm run arc >> "$LOG_FILE" 2>&1
