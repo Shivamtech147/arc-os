@@ -23,6 +23,7 @@ import * as db from '../db';
 import {
   subscribeToAuthState,
   loginWithGoogle,
+  checkRedirectResult,
   loginWithEmail,
   logoutUser
 } from '../services/firebase';
@@ -208,6 +209,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     loadData();
+
+    // Check for Firebase Auth Redirect Result (fallback from popup-blocked)
+    checkRedirectResult().then(async (authUser) => {
+      if (authUser) {
+        setUser(authUser);
+        await syncEngine.handleUserAuth(authUser);
+        await loadData();
+      }
+    }).catch((err) => {
+      console.warn('Redirect auth check notice:', err);
+    });
 
     // Subscribe to Sync Engine Status
     const unsubStatus = syncEngine.onStatusChange((status, pendingCount) => {

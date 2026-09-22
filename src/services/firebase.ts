@@ -4,6 +4,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
+  getRedirectResult,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
@@ -96,13 +97,44 @@ export async function loginWithGoogle(): Promise<AuthUser | null> {
       isAnonymous: u.isAnonymous,
     };
   } catch (err: any) {
-    console.warn('Google Popup login notice, trying fallback redirect:', err);
-    try {
-      await signInWithRedirect(auth, provider);
-      return null;
-    } catch (e) {
-      throw err;
+    console.warn('Google Popup login notice, checking redirect fallback:', err);
+    if (
+      err.code === 'auth/popup-blocked' ||
+      err.code === 'auth/popup-closed-by-user' ||
+      err.code === 'auth/cancelled-popup-request' ||
+      err.message?.includes('popup')
+    ) {
+      try {
+        await signInWithRedirect(auth, provider);
+        return null;
+      } catch (redirectErr) {
+        throw redirectErr;
+      }
     }
+    throw err;
+  }
+}
+
+export async function checkRedirectResult(): Promise<AuthUser | null> {
+  const { auth } = getFirebaseInstance();
+  if (!auth) return null;
+
+  try {
+    const result = await getRedirectResult(auth);
+    if (result && result.user) {
+      const u = result.user;
+      return {
+        uid: u.uid,
+        email: u.email,
+        displayName: u.displayName,
+        photoURL: u.photoURL,
+        isAnonymous: u.isAnonymous,
+      };
+    }
+    return null;
+  } catch (err: any) {
+    console.warn('Redirect auth result check:', err);
+    return null;
   }
 }
 
